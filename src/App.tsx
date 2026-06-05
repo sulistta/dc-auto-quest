@@ -4,6 +4,8 @@ import {
     Activity,
     AlertCircle,
     CheckCircle2,
+    ChevronLeft,
+    ChevronRight,
     Database,
     FileJson,
     Loader2,
@@ -72,7 +74,7 @@ const INACTIVE_STATUS: SimulationStatus = {
     executable_path: null
 }
 
-const VISIBLE_PROFILE_LIMIT = 80
+const PROFILES_PER_PAGE = 24
 
 function App() {
     const [profiles, setProfiles] =
@@ -88,6 +90,7 @@ function App() {
     const [message, setMessage] = useState('Carregando public/gamelist.json...')
     const [error, setError] = useState<string | null>(null)
     const [search, setSearch] = useState('')
+    const [currentPage, setCurrentPage] = useState(1)
 
     const selectedProfile = useMemo(
         () =>
@@ -117,7 +120,16 @@ function App() {
         )
     }, [profiles, search])
 
-    const visibleProfiles = filteredProfiles.slice(0, VISIBLE_PROFILE_LIMIT)
+    const totalPages = Math.max(
+        1,
+        Math.ceil(filteredProfiles.length / PROFILES_PER_PAGE)
+    )
+    const pageStart = (currentPage - 1) * PROFILES_PER_PAGE
+    const pageEnd = Math.min(
+        pageStart + PROFILES_PER_PAGE,
+        filteredProfiles.length
+    )
+    const visibleProfiles = filteredProfiles.slice(pageStart, pageEnd)
     const validationMessage = validateTargetName(selectedName)
     const canStart =
         !isLoading &&
@@ -171,6 +183,14 @@ function App() {
             isMounted = false
         }
     }, [])
+
+    useEffect(() => {
+        setCurrentPage(1)
+    }, [search])
+
+    useEffect(() => {
+        setCurrentPage((page) => Math.min(page, totalPages))
+    }, [totalPages])
 
     async function startSimulation() {
         setIsLoading(true)
@@ -251,8 +271,9 @@ function App() {
                             <p>{profiles.length} perfis carregados</p>
                         </div>
                         <div className="count-strip">
-                            {visibleProfiles.length} de{' '}
-                            {filteredProfiles.length}
+                            {filteredProfiles.length > 0
+                                ? `${pageStart + 1}-${pageEnd} de ${filteredProfiles.length}`
+                                : '0 de 0'}
                         </div>
                     </div>
 
@@ -317,6 +338,38 @@ function App() {
                             </div>
                         )}
                     </div>
+                    <nav
+                        className="pagination-bar"
+                        aria-label="Paginacao de perfis"
+                    >
+                        <button
+                            aria-label="Pagina anterior"
+                            disabled={currentPage === 1}
+                            onClick={() =>
+                                setCurrentPage((page) => Math.max(1, page - 1))
+                            }
+                            type="button"
+                        >
+                            <ChevronLeft aria-hidden="true" size={16} />
+                            <span>Anterior</span>
+                        </button>
+                        <span>
+                            Pagina {currentPage} de {totalPages}
+                        </span>
+                        <button
+                            aria-label="Proxima pagina"
+                            disabled={currentPage === totalPages}
+                            onClick={() =>
+                                setCurrentPage((page) =>
+                                    Math.min(totalPages, page + 1)
+                                )
+                            }
+                            type="button"
+                        >
+                            <span>Proxima</span>
+                            <ChevronRight aria-hidden="true" size={16} />
+                        </button>
+                    </nav>
                 </section>
 
                 <aside
