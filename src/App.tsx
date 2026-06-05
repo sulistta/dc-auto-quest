@@ -38,6 +38,7 @@ type ProcessProfile = {
     aliases: string[]
     description: string
     executableName: string
+    executablePath: string
     gameName: string
     hook: boolean
     id: string
@@ -58,6 +59,7 @@ const FALLBACK_PROFILES: ProcessProfile[] = [
         aliases: [],
         description: 'Perfil local de fallback para validação da simulação.',
         executableName: 'processo_teste',
+        executablePath: 'processo_teste',
         gameName: 'Processo de Teste',
         hook: false,
         id: 'fallback-processo-teste',
@@ -83,7 +85,7 @@ function App() {
         FALLBACK_PROFILES[0].id
     )
     const [selectedName, setSelectedName] = useState(
-        FALLBACK_PROFILES[0].processName
+        FALLBACK_PROFILES[0].executablePath
     )
     const [status, setStatus] = useState<SimulationStatus>(INACTIVE_STATUS)
     const [isLoading, setIsLoading] = useState(false)
@@ -111,6 +113,7 @@ function App() {
                 profile.gameName,
                 profile.processName,
                 profile.executableName,
+                profile.executablePath,
                 ...profile.aliases,
                 ...profile.themes
             ]
@@ -162,7 +165,7 @@ function App() {
                 if (isMounted) {
                     setProfiles(nextProfiles)
                     setSelectedProfileId(nextProfiles[0].id)
-                    setSelectedName(nextProfiles[0].processName)
+                    setSelectedName(nextProfiles[0].executablePath)
                     setMessage(
                         `${nextProfiles.length} perfis carregados de public/gamelist.json.`
                     )
@@ -200,6 +203,7 @@ function App() {
             const nextStatus = await invoke<SimulationStatus>(
                 'start_simulation',
                 {
+                    gameTitle: selectedProfile?.gameName ?? selectedName,
                     targetName: selectedName
                 }
             )
@@ -231,7 +235,7 @@ function App() {
 
     function selectProfile(profile: ProcessProfile) {
         setSelectedProfileId(profile.id)
-        setSelectedName(profile.processName)
+        setSelectedName(profile.executablePath)
     }
 
     return (
@@ -413,7 +417,7 @@ function App() {
 
                     <div className="field-group">
                         <label htmlFor="target-name">
-                            Nome do processo a simular
+                            Caminho do executavel a simular
                         </label>
                         <input
                             disabled={isLoading || status.active}
@@ -422,7 +426,7 @@ function App() {
                                 setSelectedProfileId(null)
                                 setSelectedName(event.target.value)
                             }}
-                            placeholder="game.exe"
+                            placeholder="game.exe ou bin/game.exe"
                             spellCheck={false}
                             value={selectedName}
                         />
@@ -432,7 +436,7 @@ function App() {
                             }
                         >
                             {validationMessage ??
-                                'Use letras, numeros, ponto, hifen ou underscore.'}
+                                'Use caminho relativo com letras, numeros, ponto, hifen, underscore ou barra.'}
                         </p>
                     </div>
 
@@ -506,7 +510,8 @@ function mapGameListToProfiles(games: GameListItem[]) {
             return []
         }
 
-        const processName = toSafeProcessName(executable.name, game.id)
+        const executablePath = toSafeExecutablePath(executable.name, game.id)
+        const processName = executablePath.split('/').pop() ?? executablePath
         const themes = game.themes ?? []
         const aliases = game.aliases ?? []
 
@@ -515,6 +520,7 @@ function mapGameListToProfiles(games: GameListItem[]) {
                 aliases,
                 description: buildDescription(game, executable, themes),
                 executableName: executable.name,
+                executablePath,
                 gameName: game.name,
                 hook: Boolean(game.hook),
                 id: `${game.id}-${index}`,
@@ -557,10 +563,21 @@ function buildDescription(
     return `Executável base: ${executable.name}. Temas: ${themeText}.${flagText}`
 }
 
-function toSafeProcessName(rawName: string, gameId: string) {
-    const basename =
-        rawName.replace(/^>+/, '').split(/[\\/]/).pop()?.trim() ?? ''
-    const asciiOnly = Array.from(basename.normalize('NFKD'))
+function toSafeExecutablePath(rawName: string, gameId: string) {
+    const normalizedParts = rawName
+        .replace(/^>+/, '')
+        .replace(/\\/g, '/')
+        .split('/')
+        .map((part) => sanitizePathPart(part))
+        .filter(Boolean)
+
+    const normalized = normalizedParts.join('/').slice(0, 180)
+
+    return normalized || `game_${gameId}`.slice(0, 80)
+}
+
+function sanitizePathPart(rawPart: string) {
+    const asciiOnly = Array.from(rawPart.trim().normalize('NFKD'))
         .filter((char) => char.charCodeAt(0) <= 127)
         .join('')
     const normalized = asciiOnly
@@ -569,7 +586,7 @@ function toSafeProcessName(rawName: string, gameId: string) {
         .replace(/^[_.-]+|[_.-]+$/g, '')
         .slice(0, 80)
 
-    return normalized || `game_${gameId}`.slice(0, 80)
+    return normalized
 }
 
 function validateTargetName(targetName: string) {
@@ -579,29 +596,34 @@ function validateTargetName(targetName: string) {
         return 'Informe um nome de processo.'
     }
 
-    if (trimmed.length > 80) {
-        return 'Use no maximo 80 caracteres.'
+    if (trimmed.length > 180) {
+        return 'Use no maximo 180 caracteres.'
     }
+
+    if (trimmed.startsWith('/') || trimmed.startsWith('\\')) {
+        return 'Use um caminho relativo.'
+    }
+
+    const parts = trimmed.replace(/\\/g, '/').split('/')
 
     if (
-        trimmed.includes('/') ||
-        trimmed.includes('\\') ||
-        trimmed === '.' ||
-        trimmed === '..'
+        parts.some(
+            (part) =>
+                part.length === 0 ||
+                part === '.' ||
+                part === '..' ||
+                part.endsWith('.')
+        )
     ) {
-        return 'Use apenas um nome de arquivo.'
+        return 'Use apenas partes de caminho validas.'
     }
 
-    if (trimmed.endsWith('.')) {
-        return 'O nome nao pode terminar com ponto.'
+    if (parts.some((part) => !/^[a-zA-Z0-9._-]+$/.test(part))) {
+        return 'Use apenas letras, numeros, ponto, hifen, underscore ou barra.'
     }
 
-    if (!/^[a-zA-Z0-9._-]+$/.test(trimmed)) {
-        return 'Use apenas letras, numeros, ponto, hifen ou underscore.'
-    }
-
-    if (isWindowsReservedName(trimmed)) {
-        return 'Este nome e reservado pelo Windows.'
+    if (parts.some(isWindowsReservedName)) {
+        return 'Uma parte do caminho e reservada pelo Windows.'
     }
 
     return null
