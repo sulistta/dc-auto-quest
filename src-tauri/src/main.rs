@@ -14,8 +14,8 @@ use tauri::Manager;
 /// Argumento usado pelo binário de duplo propósito para entrar em modo daemon.
 const IDLE_DAEMON_FLAG: &str = "--idle-daemon";
 
-/// Raiz controlada pelo app para os binários temporários simulados.
-const TEMP_ROOT: &str = "/tmp/process_simulator";
+/// Nome do diretório controlado pelo app dentro da pasta temporária do sistema.
+const TEMP_ROOT_NAME: &str = "process_simulator";
 
 type SharedSimulationManager = Mutex<SimulationManager>;
 
@@ -85,7 +85,7 @@ impl SimulationManager {
         }
 
         // Remove a raiz se ela ficou vazia; não falha se outro processo/app ainda a usa.
-        let _ = fs::remove_dir(TEMP_ROOT);
+        let _ = fs::remove_dir(temp_root());
 
         self.target_name = None;
         self.executable_path = None;
@@ -206,12 +206,20 @@ fn sanitize_target_name(target_name: &str) -> Result<String, String> {
         return Err("nome do processo deve ser apenas um nome de arquivo".to_string());
     }
 
+    if trimmed.ends_with('.') {
+        return Err("nome do processo não pode terminar com ponto".to_string());
+    }
+
     let is_safe = trimmed
         .chars()
         .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '_' | '-' | '.'));
 
     if !is_safe {
         return Err("use apenas letras, números, ponto, hífen ou underscore".to_string());
+    }
+
+    if is_windows_reserved_name(trimmed) {
+        return Err("nome do processo é reservado pelo Windows".to_string());
     }
 
     Ok(trimmed.to_string())
@@ -223,10 +231,48 @@ fn build_isolated_work_dir() -> Result<PathBuf, String> {
         .map_err(|error| format!("relógio do sistema inválido: {error}"))?
         .as_nanos();
 
-    Ok(PathBuf::from(TEMP_ROOT).join(format!(
+    Ok(temp_root().join(format!(
         "run-{}-{timestamp}",
         std::process::id()
     )))
+}
+
+fn temp_root() -> PathBuf {
+    std::env::temp_dir().join(TEMP_ROOT_NAME)
+}
+
+fn is_windows_reserved_name(name: &str) -> bool {
+    let stem = name
+        .split('.')
+        .next()
+        .unwrap_or_default()
+        .to_ascii_uppercase();
+
+    matches!(
+        stem.as_str(),
+        "CON"
+            | "PRN"
+            | "AUX"
+            | "NUL"
+            | "COM1"
+            | "COM2"
+            | "COM3"
+            | "COM4"
+            | "COM5"
+            | "COM6"
+            | "COM7"
+            | "COM8"
+            | "COM9"
+            | "LPT1"
+            | "LPT2"
+            | "LPT3"
+            | "LPT4"
+            | "LPT5"
+            | "LPT6"
+            | "LPT7"
+            | "LPT8"
+            | "LPT9"
+    )
 }
 
 #[cfg(unix)]
@@ -244,4 +290,33 @@ fn ensure_executable_permissions(path: &PathBuf) -> Result<(), String> {
 #[cfg(not(unix))]
 fn ensure_executable_permissions(_path: &PathBuf) -> Result<(), String> {
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn accepts_portable_process_names() {
+        assert_eq!(sanitize_target_name("game.exe"), Ok("game.exe".to_string()));
+        assert_eq!(
+            sanitize_target_name("linux_binary-1_2"),
+            Ok("linux_binary-1_2".to_string())
+        );
+    }
+
+    #[test]
+    fn rejects_paths_and_invalid_windows_names() {
+        assert!(sanitize_target_name("../game").is_err());
+        assert!(sanitize_target_name("game/name").is_err());
+        assert!(sanitize_target_name("game\\name").is_err());
+        assert!(sanitize_target_name("game.").is_err());
+        assert!(sanitize_target_name("con.exe").is_err());
+        assert!(sanitize_target_name("LPT1").is_err());
+    }
+
+    #[test]
+    fn uses_system_temp_directory() {
+        assert_eq!(temp_root(), std::env::temp_dir().join(TEMP_ROOT_NAME));
+    }
 }
