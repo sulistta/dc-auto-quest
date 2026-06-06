@@ -1,6 +1,6 @@
 {
     "name": "dc-auto-quest",
-    "description": "Desktop process simulator powered by public/gamelist.json.",
+    "description": "Desktop process simulator powered by Discord's detectable applications API.",
     "keywords": [
         "tauri",
         "vite",

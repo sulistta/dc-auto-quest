@@ -89,10 +89,13 @@ function App() {
     )
     const [status, setStatus] = useState<SimulationStatus>(INACTIVE_STATUS)
     const [isLoading, setIsLoading] = useState(false)
-    const [message, setMessage] = useState('Carregando public/gamelist.json...')
+    const [message, setMessage] = useState(
+        'Carregando lista detectavel do Discord...'
+    )
     const [error, setError] = useState<string | null>(null)
     const [search, setSearch] = useState('')
     const [currentPage, setCurrentPage] = useState(1)
+    const [dataSource, setDataSource] = useState('Discord detectable API')
 
     const selectedProfile = useMemo(
         () =>
@@ -145,20 +148,12 @@ function App() {
 
         async function loadGameList() {
             try {
-                const response = await fetch('/gamelist.json')
-
-                if (!response.ok) {
-                    throw new Error(
-                        `falha ao carregar /gamelist.json: HTTP ${response.status}`
-                    )
-                }
-
-                const games = (await response.json()) as GameListItem[]
+                const { games, source } = await loadDetectableGames()
                 const nextProfiles = mapGameListToProfiles(games)
 
                 if (nextProfiles.length === 0) {
                     throw new Error(
-                        'public/gamelist.json não contém executáveis válidos'
+                        'lista detectável do Discord não contém executáveis válidos'
                     )
                 }
 
@@ -166,15 +161,16 @@ function App() {
                     setProfiles(nextProfiles)
                     setSelectedProfileId(nextProfiles[0].id)
                     setSelectedName(nextProfiles[0].executablePath)
+                    setDataSource(source)
                     setMessage(
-                        `${nextProfiles.length} perfis carregados de public/gamelist.json.`
+                        `${nextProfiles.length} executáveis carregados de ${source}.`
                     )
                 }
             } catch (loadError) {
                 if (isMounted) {
                     setError(formatError(loadError))
                     setMessage(
-                        'Usando perfil de fallback porque public/gamelist.json não foi carregado.'
+                        'Usando perfil de fallback porque a lista detectável do Discord não foi carregada.'
                     )
                 }
             }
@@ -246,8 +242,8 @@ function App() {
                     <div>
                         <h1>DC Auto Quest</h1>
                         <p>
-                            Simulador de processos baseado em
-                            public/gamelist.json
+                            Simulador de processos baseado na lista detectável
+                            do Discord
                         </p>
                     </div>
                 </div>
@@ -294,7 +290,7 @@ function App() {
 
                     <div className="source-row">
                         <FileJson aria-hidden="true" size={16} />
-                        <span>public/gamelist.json</span>
+                        <span>{dataSource}</span>
                     </div>
 
                     <div className="profile-list" role="list">
@@ -502,48 +498,81 @@ function App() {
     )
 }
 
+async function loadDetectableGames() {
+    const payload = await invoke<string>('fetch_detectable_games')
+
+    return {
+        games: JSON.parse(payload) as GameListItem[],
+        source: 'Discord detectable API'
+    }
+}
+
 function mapGameListToProfiles(games: GameListItem[]) {
     return games.flatMap((game, index) => {
-        const executable = pickExecutable(game.executables)
+        const executables = pickExecutables(game.executables)
 
-        if (!executable) {
+        if (executables.length === 0) {
             return []
         }
 
-        const executablePath = toSafeExecutablePath(executable.name, game.id)
-        const processName = executablePath.split('/').pop() ?? executablePath
         const themes = game.themes ?? []
         const aliases = game.aliases ?? []
 
-        return [
-            {
+        return executables.map((executable, executableIndex) => {
+            const executablePath = toSafeExecutablePath(
+                executable.name,
+                game.id
+            )
+            const processName =
+                executablePath.split('/').pop() ?? executablePath
+
+            return {
                 aliases,
                 description: buildDescription(game, executable, themes),
                 executableName: executable.name,
                 executablePath,
                 gameName: game.name,
                 hook: Boolean(game.hook),
-                id: `${game.id}-${index}`,
+                id: `${game.id}-${index}-${executableIndex}`,
                 overlay: Boolean(game.overlay),
                 processName,
                 themes
             }
-        ]
+        })
     })
 }
 
-function pickExecutable(executables: GameExecutable[] | undefined) {
+function pickExecutables(executables: GameExecutable[] | undefined) {
     if (!executables || executables.length === 0) {
-        return null
+        return []
     }
 
-    return (
-        executables.find(
-            (executable) => executable.os === 'win32' && !executable.is_launcher
-        ) ??
-        executables.find((executable) => !executable.is_launcher) ??
-        executables[0]
+    const windowsExecutables = executables.filter(
+        (executable) => executable.os === 'win32' && !executable.is_launcher
     )
+
+    if (windowsExecutables.length > 0) {
+        return dedupeExecutables(windowsExecutables)
+    }
+
+    return dedupeExecutables(
+        executables.filter((executable) => !executable.is_launcher)
+    )
+}
+
+function dedupeExecutables(executables: GameExecutable[]) {
+    const seen = new Set<string>()
+
+    return executables.filter((executable) => {
+        const key = executable.name.toLowerCase()
+
+        if (seen.has(key)) {
+            return false
+        }
+
+        seen.add(key)
+        return true
+    })
 }
 
 function buildDescription(

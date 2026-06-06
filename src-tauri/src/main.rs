@@ -25,6 +25,8 @@ const FAKE_GAMES_DIR_NAME: &str = "fake_games";
 
 type SharedSimulationManager = Mutex<SimulationManager>;
 
+const DETECTABLE_APPS_URL: &str = "https://discordapp.com/api/v9/applications/detectable";
+
 #[derive(Debug, Clone, Serialize)]
 struct SimulationStatus {
     active: bool,
@@ -105,6 +107,25 @@ impl Drop for SimulationManager {
         // Garante cleanup best-effort se o app fechar sem chamar stop_simulation.
         let _ = self.stop_active();
     }
+}
+
+#[tauri::command]
+async fn fetch_detectable_games() -> Result<String, String> {
+    let response = reqwest::get(DETECTABLE_APPS_URL)
+        .await
+        .map_err(|error| format!("falha ao consultar lista detectável do Discord: {error}"))?;
+
+    if !response.status().is_success() {
+        return Err(format!(
+            "Discord retornou HTTP {} ao consultar lista detectável",
+            response.status()
+        ));
+    }
+
+    response
+        .text()
+        .await
+        .map_err(|error| format!("falha ao ler resposta do Discord: {error}"))
 }
 
 #[tauri::command]
@@ -199,7 +220,11 @@ fn main() {
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_shell::init())
         .manage(SharedSimulationManager::default())
-        .invoke_handler(tauri::generate_handler![start_simulation, stop_simulation])
+        .invoke_handler(tauri::generate_handler![
+            fetch_detectable_games,
+            start_simulation,
+            stop_simulation
+        ])
         .on_window_event(|window, event| {
             if matches!(event, tauri::WindowEvent::CloseRequested { .. }) {
                 if let Ok(mut manager) = window.state::<SharedSimulationManager>().lock() {
