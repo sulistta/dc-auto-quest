@@ -209,7 +209,7 @@
     .profiles-panel {
         display: grid;
         gap: 12px;
-        grid-template-rows: auto auto auto minmax(0, 1fr) auto;
+        grid-template-rows: auto auto minmax(0, 1fr) auto;
     }
 
     .control-panel {
@@ -241,8 +241,7 @@
         margin: 3px 0 0;
     }
 
-    .count-strip,
-    .source-row {
+    .count-strip {
         align-items: center;
         background: #313338;
         border: 1px solid #3f4147;
@@ -254,11 +253,6 @@
         gap: 8px;
         min-height: 32px;
         padding: 0 10px;
-    }
-
-    .source-row {
-        justify-content: flex-start;
-        width: fit-content;
     }
 
     .search-box {
@@ -292,7 +286,9 @@
     }
 
     .profile-list {
-        display: grid;
+        align-content: start;
+        display: flex;
+        flex-direction: column;
         gap: 8px;
         min-height: 0;
         overflow-x: hidden;
@@ -311,6 +307,7 @@
         display: grid;
         gap: 10px;
         grid-template-columns: minmax(0, 1fr) auto;
+        flex: 0 0 auto;
         min-height: 74px;
         padding: 12px;
         text-align: left;

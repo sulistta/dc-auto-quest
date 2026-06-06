@@ -7,7 +7,6 @@ import {
     ChevronLeft,
     ChevronRight,
     Database,
-    FileJson,
     Loader2,
     Play,
     Search,
@@ -95,7 +94,6 @@ function App() {
     const [error, setError] = useState<string | null>(null)
     const [search, setSearch] = useState('')
     const [currentPage, setCurrentPage] = useState(1)
-    const [dataSource, setDataSource] = useState('Discord detectable API')
 
     const selectedProfile = useMemo(
         () =>
@@ -161,7 +159,6 @@ function App() {
                     setProfiles(nextProfiles)
                     setSelectedProfileId(nextProfiles[0].id)
                     setSelectedName(nextProfiles[0].executablePath)
-                    setDataSource(source)
                     setMessage(
                         `${nextProfiles.length} executáveis carregados de ${source}.`
                     )
@@ -287,11 +284,6 @@ function App() {
                             value={search}
                         />
                     </label>
-
-                    <div className="source-row">
-                        <FileJson aria-hidden="true" size={16} />
-                        <span>{dataSource}</span>
-                    </div>
 
                     <div className="profile-list" role="list">
                         {visibleProfiles.length > 0 ? (
